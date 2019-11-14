@@ -11,84 +11,30 @@ import java.util.LinkedList;
 import java.util.Queue;
 
 public class SAP {
-    private int[] edgeTo;
-    private int[] distFromRoot;
+    private final Digraph dg;
 
     // constructor takes a digraph (not necessarily a DAG)
-    public SAP(Digraph G) {
-        if (G == null || G.V() == 0) throw new IllegalArgumentException("Graph must not be null nor empty");
-        this.edgeTo = new int[G.V()];
-        this.distFromRoot = new int[G.V()];
-        Arrays.fill(distFromRoot, -1);
-        boolean[] tempMarked = new boolean[G.V()];
-        // reverse the graph to convert the root from sink to source
-        buildPaths(G.reverse(), getRoot(G, tempMarked, 0));
-    }
-
-    // DFS until sink (root) found
-    private int getRoot(Digraph G, boolean[] marked, int v) {
-        marked[v] = true;
-        if (G.outdegree(v) == 0) return v;
-        for (int adj : G.adj(v)) {
-            if (!marked[adj]) {
-                getRoot(G, marked, adj);
-            }
-        }
-        return -1;
-    }
-
-    // BFS to build paths and saves distance from every vertex to root
-    private void buildPaths(Digraph G, int root) {
-        Queue<Integer> q = new LinkedList<>();
-        q.add(root);
-        distFromRoot[root] = 0;
-        while (!q.isEmpty()) {
-            int v = q.remove();
-            for (int adj : G.adj(v)) {
-                // not yet checked
-                if (distFromRoot[adj] == -1) {
-                    distFromRoot[adj] = distFromRoot[v] + 1;
-                    edgeTo[adj] = v;
-                    q.add(adj);
-                }
-            }
-        }
+    public SAP(Digraph dg) {
+        if (dg == null || dg.V() == 0) throw new IllegalArgumentException("Graph must not be null nor empty");
+        this.dg = new Digraph(dg);
     }
 
     // length of shortest ancestral path between v and w; -1 if no such path
     public int length(int v, int w) {
         validateVertex(v);
         validateVertex(w);
-        int len = 0;
-        if (noPathBetween(v, w)) return -1;
-        while (distFromRoot[v] > distFromRoot[w]) {
-            v = edgeTo[v];
-            len++;
-        }
-        while (distFromRoot[w] > distFromRoot[v]) {
-            w = edgeTo[w];
-            len++;
-        }
-        while (v != w) {
-            v = edgeTo[v];
-            w = edgeTo[w];
-            len += 2;
-        }
-        return len;
+        int[] distToV = computeDists(v);
+        int[] distToW = computeDists(w);
+        return findSapLen(distToV, distToW);
     }
 
     // a common ancestor of v and w that participates in a shortest ancestral path; -1 if no such path
     public int ancestor(int v, int w) {
         validateVertex(v);
         validateVertex(w);
-        if (noPathBetween(v, w)) return -1;
-        while (distFromRoot[v] > distFromRoot[w]) v = edgeTo[v];
-        while (distFromRoot[w] > distFromRoot[v]) w = edgeTo[w];
-        while (v != w) {
-            v = edgeTo[v];
-            w = edgeTo[w];
-        }
-        return v;
+        int[] distToV = computeDists(v);
+        int[] distToW = computeDists(w);
+        return findSapAncestor(distToV, distToW);
     }
 
     // length of shortest ancestral path between any vertex in v and any vertex in w; -1 if no such path
@@ -96,17 +42,9 @@ public class SAP {
         if (vs == null || ws == null) throw new IllegalArgumentException("Iterables must not be null");
         validateVertexIterable(vs);
         validateVertexIterable(ws);
-        int shortestLen = Integer.MAX_VALUE;
-        for (Integer v : vs) {
-            for (Integer w : ws) {
-                if (noPathBetween(v, w)) return -1;
-                int len = length(v, w);
-                if (len < shortestLen) {
-                    shortestLen = len;
-                }
-            }
-        }
-        return shortestLen;
+        int[] distToV = computeShortestDists(vs);
+        int[] distToW = computeShortestDists(ws);
+        return findSapLen(distToV, distToW);
     }
 
     // a common ancestor that participates in shortest ancestral path; -1 if no such path
@@ -114,28 +52,79 @@ public class SAP {
         if (vs == null || ws == null) throw new IllegalArgumentException("Iterables must not be null");
         validateVertexIterable(vs);
         validateVertexIterable(ws);
+        int[] distToV = computeShortestDists(vs);
+        int[] distToW = computeShortestDists(ws);
+        return findSapAncestor(distToV, distToW);
+    }
+
+    private int findSapLen(int[] distToV, int[] distToW) {
         int shortestLen = Integer.MAX_VALUE;
-        int sapV = -1, sapW = -1;
-        for (Integer v : vs) {
-            for (Integer w : ws) {
-                if (noPathBetween(v, w)) return -1;
-                int len = length(v, w);
-                if (len < shortestLen) {
-                    shortestLen = len;
-                    sapV = v;
-                    sapW = w;
+        for (int i = 0; i < dg.V(); i++) {
+            int currLen = (distToV[i] == Integer.MAX_VALUE || distToW[i] == Integer.MAX_VALUE)
+                    ? Integer.MAX_VALUE : distToV[i] + distToW[i];
+            if (currLen < shortestLen) {
+                shortestLen = currLen;
+            }
+        }
+        if (shortestLen == Integer.MAX_VALUE) return -1;
+        return shortestLen;
+    }
+
+    private int findSapAncestor(int[] distToV, int[] distToW) {
+        int shortestLen = Integer.MAX_VALUE;
+        int ancestor = Integer.MAX_VALUE;
+        for (int i = 0; i < dg.V(); i++) {
+            int currLen = (distToV[i] == Integer.MAX_VALUE || distToW[i] == Integer.MAX_VALUE)
+                    ? Integer.MAX_VALUE : distToV[i] + distToW[i];
+            if (currLen < shortestLen) {
+                shortestLen = currLen;
+                ancestor = i;
+            }
+        }
+        if (ancestor == Integer.MAX_VALUE) return -1;
+        return ancestor;
+    }
+
+    private int[] computeDists(int source) {
+        int[] distTo = new int[dg.V()];
+        Arrays.fill(distTo, Integer.MAX_VALUE);
+        Queue<Integer> q = new LinkedList<>();
+        q.add(source);
+        distTo[source] = 0;
+        while (!q.isEmpty()) {
+            int v = q.remove();
+            for (int adj : dg.adj(v)) {
+                if (distTo[adj] == Integer.MAX_VALUE) {
+                    distTo[adj] = distTo[v] + 1;
+                    q.add(adj);
                 }
             }
         }
-        return ancestor(sapV, sapW);
+        return distTo;
     }
 
-    private boolean noPathBetween(int v, int w) {
-        return distFromRoot[v] == -1 || distFromRoot[w] == -1;
+    private int[] computeShortestDists(Iterable<Integer> source) {
+        int[] distTo = new int[dg.V()];
+        Arrays.fill(distTo, Integer.MAX_VALUE);
+        Queue<Integer> q = new LinkedList<>();
+        for (int s : source) {
+            q.add(s);
+            distTo[s] = 0;
+        }
+        while (!q.isEmpty()) {
+            int v = q.remove();
+            for (int adj : dg.adj(v)) {
+                if (distTo[adj] == Integer.MAX_VALUE) {
+                    distTo[adj] = distTo[v] + 1;
+                    q.add(adj);
+                }
+            }
+        }
+        return distTo;
     }
 
     private void validateVertex(Integer v) {
-        if (v == null || v < 0 || v >= edgeTo.length) throw new IllegalArgumentException("Invalid vertex number supplied");
+        if (v == null || v < 0 || v >= dg.V()) throw new IllegalArgumentException("Invalid vertex number supplied");
     }
 
     private void validateVertexIterable(Iterable<Integer> vs) {
