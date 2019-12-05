@@ -3,8 +3,6 @@ package io.github.marwlod.burrows_wheeler;
 import edu.princeton.cs.algs4.BinaryStdIn;
 import edu.princeton.cs.algs4.BinaryStdOut;
 
-import java.util.Arrays;
-
 public class BurrowsWheeler {
     private static final int EXT_ASCII_SIZE = 256;
 
@@ -33,41 +31,37 @@ public class BurrowsWheeler {
     public static void inverseTransform() {
         final int originalIndex = BinaryStdIn.readInt();
         final String in = BinaryStdIn.readString();
-        final int[] extAscii = new int[EXT_ASCII_SIZE];
         final char[] encoded = in.toCharArray();
-        final char[] sorted = in.toCharArray();
-        Arrays.sort(sorted);
+        final int[] counts = calculateCounts(encoded);
         int[] next = new int[in.length()];
+
         for (int i = 0; i < in.length(); i++) {
-            int charFirstIndex = firstIndexOf(sorted, encoded[i]);
-            char currChar = sorted[charFirstIndex];
-            if (charFirstIndex + extAscii[currChar] == i) {
-                next[(charFirstIndex + extAscii[currChar] + 1) % in.length()] = i;
+            char currChar = encoded[i];
+            int charIndex = counts[currChar]++;
+            if (charIndex == i) {
+                next[(charIndex + 1) % in.length()] = i;
             } else {
-                next[charFirstIndex + extAscii[currChar]] = i;
+                next[charIndex] = i;
             }
-            extAscii[encoded[i]]++;
         }
 
         int count = 0;
-        for (int i = originalIndex; count < in.length(); i = next[i]) {
-            BinaryStdOut.write(sorted[i]);
+        for (int i = next[originalIndex]; count < in.length(); i = next[i]) {
+            BinaryStdOut.write(encoded[i]);
             count++;
         }
         BinaryStdOut.flush();
     }
 
-    private static int firstIndexOf(char[] chars, char key) {
-        int lo = 0;
-        int hi = chars.length - 1;
-        while (lo <= hi) {
-            // key is in a[lo..hi] or not present.
-            int mid = lo + (hi - lo) / 2;
-            if (key == chars[mid] && (mid == 0 || key > chars[mid-1])) return mid;
-            else if (key > chars[mid]) lo = mid + 1;
-            else hi = mid - 1;
+    private static int[] calculateCounts(char[] arr) {
+        int[] count = new int[EXT_ASCII_SIZE + 1];
+        for (char c : arr) {
+            count[c + 1]++;
         }
-        return -1;
+        for (int r = 0; r < EXT_ASCII_SIZE; r++) {
+            count[r + 1] += count[r];
+        }
+        return count;
     }
 
     // if args[0] is "-", apply Burrows-Wheeler transform

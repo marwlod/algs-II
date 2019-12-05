@@ -14,6 +14,8 @@ public class CircularSuffixArray {
         for (int i = 0; i < length; i++) {
             suffixes[i] = i;
         }
+
+        // TODO could be improved using 3-way radix quicksort
         Arrays.sort(suffixes, (first, second) -> {
             for (int i = 0; i < length; i++) {
                 int thisChar = s.charAt(first++ % length);
